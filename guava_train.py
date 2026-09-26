@@ -403,16 +403,20 @@ def train_semantic(model, fd, S, epochs, batch, lr, seed, save_path=None, kd=Non
 
 
 def with_oom_retry(fn, batch, min_batch=1):
-    """Jalankan fn(batch); kalau CUDA OOM → batch /2 dan ulangi."""
+    """Jalankan fn(batch); kalau CUDA OOM → batch /2 dan ulangi.
+    Pembersihan dilakukan DI LUAR blok except: selama masih di dalam except, traceback
+    memegang semua tensor percobaan gagal sehingga empty_cache() tidak membebaskan apa pun."""
+    import gc
     while True:
         try:
             return fn(batch), batch
         except torch.cuda.OutOfMemoryError:
-            torch.cuda.empty_cache()
             if batch <= min_batch:
                 raise
-            batch = max(min_batch, batch // 2)
-            log.warning(f"[OOM] turunkan batch → {batch}")
+        gc.collect()
+        torch.cuda.empty_cache()
+        batch = max(min_batch, batch // 2)
+        log.warning(f"[OOM] turunkan batch → {batch} (VRAM dibebaskan)")
 
 
 def profile_semseg(model, S, weight_path=None):
