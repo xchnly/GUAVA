@@ -44,7 +44,7 @@ punya model tersisa.
 | Family | Model |
 |---|---|
 | YOLO | `yolo11x-seg`, `yolo26x-seg` |
-| Transformer | `segformer-b5`, `segformer-b2` |
+| Transformer | `segformer-b5` (ADE 640, fallback Cityscapes / mit-b5), `segformer-b2` |
 | CNN | `mnv3L-deeplabv3plus`, `mnv2-unet`, `effb0-unet` |
 | Edge / student | `mnv3S-lraspp`, `efflite0-unet`, `shufflenetv2-unet`, `mobileone-s0-unet`, `mnv2-unet`, `mnv3L-deeplabv3plus` |
 

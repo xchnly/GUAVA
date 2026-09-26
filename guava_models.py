@@ -10,6 +10,7 @@ Preflight: tiap model dicoba build (dengan bobot pretrained) + forward/backward 
 Yang gagal di-skip otomatis; minimal 1 model per family wajib lolos.
 """
 import copy
+import json
 from pathlib import Path
 
 import torch
@@ -33,8 +34,12 @@ REGISTRY = {
     "yolo11n-seg": ("yolo", "yolo", {"weights": "yolo11n-seg.pt"}),   # uji cepat
     "yolo26n-seg": ("yolo", "yolo", {"weights": "yolo26n-seg.pt"}),
     # --- Transformer-seg (HF SegFormer) ---
-    "segformer-b5": ("segformer", "transformer", {"repo": "nvidia/segformer-b5-finetuned-ade-512-512"}),
-    "segformer-b2": ("segformer", "transformer", {"repo": "nvidia/segformer-b2-finetuned-ade-512-512"}),
+    # repo dicoba berurutan; B5 versi ADE dirilis di 640×640 (tidak ada varian 512)
+    "segformer-b5": ("segformer", "transformer", {"repos": ["nvidia/segformer-b5-finetuned-ade-640-640",
+                                                            "nvidia/segformer-b5-finetuned-cityscapes-1024-1024",
+                                                            "nvidia/mit-b5"]}),
+    "segformer-b2": ("segformer", "transformer", {"repos": ["nvidia/segformer-b2-finetuned-ade-512-512",
+                                                            "nvidia/mit-b2"]}),
     # --- CNN-seg non-YOLO (SMP + encoder timm) ---
     "mnv3L-deeplabv3plus": ("smp", "cnn", {"arch": "DeepLabV3Plus", "enc": "tu-mobilenetv3_large_100"}),
     "mnv2-unet": ("smp", "cnn", {"arch": "Unet", "enc": "tu-mobilenetv2_100"}),
@@ -49,7 +54,7 @@ REGISTRY = {
 # Token cache (HF repo / nama file) per model → dipakai clean_all(keep_models=...)
 def cache_tokens(name):
     kind, _, spec = REGISTRY[name]
-    return [name, spec.get("repo", ""), spec.get("weights", ""),
+    return [name, *spec.get("repos", []), spec.get("weights", ""),
             spec.get("enc", "").replace("tu-", ""), {"lraspp_small": "mobilenet_v3_small",
                                                       "shufflenet_unet": "shufflenetv2"}.get(kind, "")]
 
@@ -136,11 +141,24 @@ def build(name, nc, pretrained=True):
     if kind == "segformer":
         from transformers import SegformerConfig, SegformerForSemanticSegmentation
         if pretrained:
-            net = SegformerForSemanticSegmentation.from_pretrained(spec["repo"], num_labels=K,
-                                                                   ignore_mismatched_sizes=True)
+            net, errs = None, []
+            for repo in spec["repos"]:
+                try:
+                    net = SegformerForSemanticSegmentation.from_pretrained(repo, num_labels=K,
+                                                                           ignore_mismatched_sizes=True)
+                    break
+                except Exception as e:
+                    errs.append(f"{repo}: {repr(e)[:150]}")
+            if net is None:
+                raise OSError(" | ".join(errs))
+            # catat arsitektur yang benar-benar dipakai → load ulang bobot selalu cocok
+            arch = read_json(ARCH_PATH, {})
+            arch[name] = {"repo": repo, "config": {k: v for k, v in net.config.to_dict().items()
+                                                   if k not in ("id2label", "label2id", "num_labels")}}
+            write_json(ARCH_PATH, arch)
         else:
-            cfg = SegformerConfig.from_pretrained(spec["repo"]) if _hf_cached(spec["repo"]) else \
-                _segformer_cfg(name)
+            saved = read_json(ARCH_PATH, {}).get(name)
+            cfg = SegformerConfig(**saved["config"]) if saved else _segformer_cfg(name)
             cfg.num_labels = K
             net = SegformerForSemanticSegmentation(cfg)
         if C.GRAD_CKPT_TRANSFORMER:
@@ -170,14 +188,6 @@ def build(name, nc, pretrained=True):
         net = LiteUNet(body, chs, K)
         return SegNet(net, kind, name, nc, net.head)
     raise ValueError(f"model tidak dikenal: {name}")
-
-
-def _hf_cached(repo):
-    try:
-        from huggingface_hub import try_to_load_from_cache
-        return isinstance(try_to_load_from_cache(repo, "config.json"), str)
-    except Exception:
-        return False
 
 
 def _segformer_cfg(name):
@@ -220,6 +230,7 @@ def load_model(path, dev="cpu"):
 # PREFLIGHT
 # =============================================================================
 PREFLIGHT_PATH = C.STATE_DIR / "model_preflight.json"
+ARCH_PATH = C.STATE_DIR / "model_arch.json"
 FAMILY_LISTS = {"yolo": "YOLO_MODELS", "transformer": "TRANSFORMER_MODELS", "cnn": "CNN_MODELS",
                 "edge": "EDGE_MODELS"}
 
@@ -248,16 +259,20 @@ def preflight(names, nc, force=False):
     """Uji build + pretrained + forward/backward. Hasil di-cache di state/model_preflight.json."""
     res = read_json(PREFLIGHT_PATH, {})
     for n in names:
+        sig = json.dumps(REGISTRY[n][2], sort_keys=True)   # spesifikasi berubah → uji ulang
         if n in res and res[n]["ok"] and not force:
             continue
-        if n in res and not res[n]["ok"] and res[n].get("tries", 0) >= 2 and not force:
+        if n in res and not res[n]["ok"] and res[n].get("tries", 0) >= 2 and res[n].get("sig") == sig \
+                and not force:
             continue
+        if n in res and res[n].get("sig") != sig:
+            res[n]["tries"] = 0
         try:
             _check_one(n, nc)
-            res[n] = {"ok": True}
+            res[n] = {"ok": True, "sig": sig}
             log.info(f"[PREFLIGHT] ✔ {n}")
         except Exception as e:
-            res[n] = {"ok": False, "err": repr(e)[:400], "tries": res.get(n, {}).get("tries", 0) + 1}
+            res[n] = {"ok": False, "err": repr(e)[:600], "tries": res.get(n, {}).get("tries", 0) + 1, "sig": sig}
             log.warning(f"[PREFLIGHT] ✘ {n}: {repr(e)[:300]} → di-skip")
         finally:
             if torch.cuda.is_available():
