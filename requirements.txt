@@ -1,0 +1,25 @@
+# torch/torchvision TIDAK dicantumkan: RTX 5060 Ti (Blackwell, sm_120) butuh build CUDA 12.8+.
+# Pakai image Vast.ai "PyTorch (cu128)" atau:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+ultralytics>=8.3.200
+albumentations>=2.0
+segmentation-models-pytorch>=0.5
+transformers>=4.45
+timm>=1.0
+onnx
+onnxruntime
+onnxsim
+openvino
+nncf
+pandas
+openpyxl
+xlsxwriter
+scikit-learn
+scipy
+psutil
+GPUtil
+thop
+pyarrow
+torch-pruning>=1.5
+matplotlib
+opencv-python-headless
