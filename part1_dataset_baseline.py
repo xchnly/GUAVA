@@ -5,7 +5,7 @@ part1_dataset_baseline.py — FASE 1: siapkan data + YOLO baseline (kandidat tea
 1B. Split ulang 80/10/10 × 5-fold stratified × 5 seed, preprocessing baru, cache .npy,
     balancing (400/kelas, max +3000 aug) → results/dataset_split_summary.xlsx
 1C. YOLO baseline (yolo11x-seg, yolo26x-seg) per (seed, fold) = 2 × 5 × 5 = 50 run.
-    Simpan HANYA best.pt. Eval val+test → results/part1_yolo.xlsx segera tiap run.
+    Simpan best.pt + plot YOLO (results/yolo_plots/<run>/). Eval val+test → results/part1_yolo.xlsx.
 
 Jalankan: python part1_dataset_baseline.py [--seed 42] [--fold 0]
 Resume  : jalankan ulang — unit yang sudah selesai di state/part1.json di-skip.
@@ -81,6 +81,12 @@ def main():
                     res["batch"] = used
                     promote_final(best, "yolo", name, seed, fold, res["val_mAP50-95_mask"], {"imgsz": S})
                     update_teacher(seed, fold, name, "yolo", "yolo", res[C.TEACHER_SELECT_METRIC], best, S, PART)
+                    # simpan plot YOLO (train_batch, val_batch pred, confusion matrix, PR curve, results.png)
+                    plot_dir = C.EXCEL_DIR / "yolo_plots" / run
+                    plot_dir.mkdir(parents=True, exist_ok=True)
+                    for f in (C.RUNS_DIR / run).glob("*"):
+                        if f.suffix in (".png", ".jpg"):
+                            shutil.copy2(f, plot_dir / f.name)
                     shutil.rmtree(C.RUNS_DIR / run, ignore_errors=True)
                     return res
 

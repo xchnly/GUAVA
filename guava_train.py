@@ -497,7 +497,7 @@ def train_yolo(name, fd, S, epochs, batch, seed, run_name, history=None):
     os.chdir(C.TMP_DIR)  # file nyasar (yolo11n.pt dari AMP check, font) masuk tmp/
     try:
         model.train(data=str(data), epochs=epochs, imgsz=S, batch=batch, seed=seed, deterministic=False,
-                    project=str(C.RUNS_DIR), name=run_name, exist_ok=True, patience=C.PATIENCE, plots=False,
+                    project=str(C.RUNS_DIR), name=run_name, exist_ok=True, patience=C.PATIENCE, plots=True,
                     save_period=-1, workers=C.NUM_WORKERS, fliplr=0.5, flipud=0.5, degrees=20.0, scale=0.2,
                     shear=5.0, hsv_h=0.015, hsv_s=0.5, hsv_v=0.3, mosaic=1.0, close_mosaic=10, amp=True,
                     cache=False, verbose=False, val=True, device=0 if torch.cuda.is_available() else "cpu")
